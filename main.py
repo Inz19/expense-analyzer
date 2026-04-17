@@ -37,6 +37,20 @@ with st.form("expense_form"):
 
 # 👉 IMPORTANT: use this everywhere below
 data = st.session_state.data
+# =========================
+# UNDO LAST ENTRY
+# =========================
+st.subheader("↩️ Undo Last Entry")
+
+if st.button("Undo Last Expense"):
+    if len(st.session_state.data) > 0:
+        st.session_state.data = st.session_state.data[:-1]
+        st.success("Last expense removed")
+    else:
+        st.warning("No data to remove")
+
+# Update data again
+data = st.session_state.data
 
 
 # =========================
