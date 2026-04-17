@@ -12,6 +12,32 @@ data = pd.read_csv("expenses.csv")
 # Clean data
 data = data[['Date', 'Category', 'Amount']]
 data['Date'] = pd.to_datetime(data['Date'], dayfirst=True)
+# Initialize session data
+if 'data' not in st.session_state:
+    st.session_state.data = data.copy()
+
+st.header("➕ Add New Expense")
+
+with st.form("expense_form"):
+    date = st.date_input("Select Date")
+    category = st.selectbox("Category", ["Food", "Travel", "Shopping", "Entertainment", "Others"])
+    amount = st.number_input("Amount", min_value=0.0)
+
+    submitted = st.form_submit_button("Add Expense")
+
+    if submitted:
+        new_data = pd.DataFrame({
+            'Date': [pd.to_datetime(date)],
+            'Category': [category],
+            'Amount': [amount]
+        })
+
+        st.session_state.data = pd.concat([st.session_state.data, new_data], ignore_index=True)
+        st.success("Expense added successfully!")
+
+# 👉 IMPORTANT: use this everywhere below
+data = st.session_state.data
+
 
 # =========================
 # 🔹 SECTION 1: OVERVIEW
