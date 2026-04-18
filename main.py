@@ -6,7 +6,7 @@ import os
 from datetime import datetime
 import calendar
 import numpy as np
-import jason
+import json
 
 if not firebase_admin._apps:
     firebase_dict = json.loads(st.secrets["FIREBASE_KEY"])
