@@ -13,17 +13,16 @@ if not firebase_admin._apps:
     firebase_key = st.secrets["FIREBASE_KEY"]
     firebase_dict = dict(firebase_key)
 
-    # Force fix private key — handles both \\n and literal newlines
     pk = firebase_dict.get("private_key", "")
     pk = pk.replace("\\n", "\n")
-    if not pk.strip().startswith("-----BEGIN"):
-        raise ValueError("private_key looks wrong — check your Streamlit secrets")
     firebase_dict["private_key"] = pk
 
+    # TEMPORARY DEBUG — remove after fixing
     st.write("Keys found:", list(firebase_dict.keys()))
-st.write("private_key starts with:", firebase_dict["private_key"][:30])
-st.write("private_key ends with:", firebase_dict["private_key"][-30:])
-st.stop()
+    st.write("private_key starts with:", firebase_dict["private_key"][:30])
+    st.write("private_key ends with:", firebase_dict["private_key"][-30:])
+    st.stop()
+
     cred = credentials.Certificate(firebase_dict)
     firebase_admin.initialize_app(cred, {
         "databaseURL": "https://expense-analyzer-db523-default-rtdb.asia-southeast1.firebasedatabase.app/"
