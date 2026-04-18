@@ -14,14 +14,12 @@ if not firebase_admin._apps:
     firebase_dict = dict(firebase_key)
 
     pk = firebase_dict.get("private_key", "")
-    pk = pk.replace("\\n", "\n")
+    pk = pk.replace("\\n", "\n")  # fix escaped newlines
+    # Fix spaces that Streamlit puts instead of newlines
+    pk = pk.replace("-----BEGIN PRIVATE KEY----- ", "-----BEGIN PRIVATE KEY-----\n")
+    pk = pk.replace(" -----END PRIVATE KEY-----", "\n-----END PRIVATE KEY-----")
+    pk = pk.replace(" ", "\n")  # fix spaces in the middle of the key
     firebase_dict["private_key"] = pk
-
-    # TEMPORARY DEBUG — remove after fixing
-    st.write("Keys found:", list(firebase_dict.keys()))
-    st.write("private_key starts with:", firebase_dict["private_key"][:30])
-    st.write("private_key ends with:", firebase_dict["private_key"][-30:])
-    st.stop()
 
     cred = credentials.Certificate(firebase_dict)
     firebase_admin.initialize_app(cred, {
