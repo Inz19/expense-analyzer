@@ -20,6 +20,10 @@ if not firebase_admin._apps:
         raise ValueError("private_key looks wrong — check your Streamlit secrets")
     firebase_dict["private_key"] = pk
 
+    st.write("Keys found:", list(firebase_dict.keys()))
+st.write("private_key starts with:", firebase_dict["private_key"][:30])
+st.write("private_key ends with:", firebase_dict["private_key"][-30:])
+st.stop()
     cred = credentials.Certificate(firebase_dict)
     firebase_admin.initialize_app(cred, {
         "databaseURL": "https://expense-analyzer-db523-default-rtdb.asia-southeast1.firebasedatabase.app/"
