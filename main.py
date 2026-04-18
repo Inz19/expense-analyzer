@@ -20,7 +20,10 @@ if not firebase_admin._apps:
 # ================== FIREBASE HELPERS ==================
 def save_expenses(username, data):
     ref = db.reference(f"users/{username}/expenses")
-    ref.set(data.to_dict(orient="records"))
+    records = data.copy()
+    records["Date"] = records["Date"].astype(str)
+    records["Amount"] = records["Amount"].astype(float)
+    ref.set(records.to_dict(orient="records"))
 
 def load_expenses(username):
     ref = db.reference(f"users/{username}/expenses")
