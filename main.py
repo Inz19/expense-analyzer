@@ -1,31 +1,210 @@
+import os
+import json
+import calendar
+import numpy as np
+import pandas as pd
+import streamlit as st
+from datetime import datetime
 import firebase_admin
 from firebase_admin import credentials, db
-import streamlit as st
-import pandas as pd
-import json
 
-# 🔥 Initialize Firebase ONLY ONCE
+# ================== FIREBASE INIT ==================
 if not firebase_admin._apps:
     firebase_key = st.secrets["FIREBASE_KEY"]
-
-    # Handle BOTH cases (string OR dict)
-    if isinstance(firebase_key, str):
-        firebase_dict = json.loads(firebase_key)
-    else:
-        firebase_dict = dict(firebase_key)  # ensure it's a normal dict
-
+    firebase_dict = json.loads(firebase_key) if isinstance(firebase_key, str) else dict(firebase_key)
     cred = credentials.Certificate(firebase_dict)
-
     firebase_admin.initialize_app(cred, {
         "databaseURL": "https://expense-analyzer-db523-default-rtdb.asia-southeast1.firebasedatabase.app/"
     })
 
-
-# ✅ SAVE DATA
-def save_data(username, data):
+# ================== FIREBASE HELPERS ==================
+def save_expenses(username, data):
     ref = db.reference(f"users/{username}/expenses")
     ref.set(data.to_dict(orient="records"))
 
+def load_expenses(username):
+    ref = db.reference(f"users/{username}/expenses")
+    data = ref.get()
+    return pd.DataFrame(data) if data else pd.DataFrame(columns=["Date", "Category", "Amount"])
+
+def save_user(username, pin):
+    ref = db.reference(f"users/{username}/profile")
+    ref.set({"pin": pin})
+
+def load_user(username):
+    ref = db.reference(f"users/{username}/profile")
+    return ref.get()  # Returns dict with 'pin' and 'income', or None
+
+def save_income(username, income):
+    ref = db.reference(f"users/{username}/profile/income")
+    ref.set(income)
+
+def load_income(username):
+    ref = db.reference(f"users/{username}/profile/income")
+    val = ref.get()
+    return float(val) if val else 0.0
+
+# ================== CONFIG ==================
+st.set_page_config(page_title="Expense Analyzer", layout="wide")
+st.title("💰 Smart Expense Analyzer")
+
+# ================== USER LOGIN ==================
+st.sidebar.header("👤 User")
+username = st.sidebar.text_input("Enter username").strip()
+
+if username == "":
+    st.warning("Please enter a username to continue.")
+    st.stop()
+
+user_profile = load_user(username)
+
+if user_profile:
+    # Existing user — ask for PIN
+    pin = st.sidebar.text_input("Enter PIN", type="password").strip()
+
+    if pin == "":
+        st.info("Please enter your PIN.")
+        st.stop()
+
+    if pin != str(user_profile.get("pin", "")):
+        st.error("❌ Wrong PIN. Please try again.")
+        st.stop()
+
+    if "data" not in st.session_state or st.session_state.get("user") != username:
+        st.session_state.data = load_expenses(username)
+        st.session_state.user = username
+        st.session_state.income = load_income(username)
+
+    st.success(f"✅ Welcome back, {username}!")
+
+else:
+    # New user — register
+    st.sidebar.subheader("🆕 New User — Set PIN")
+    new_pin = st.sidebar.text_input("Choose a PIN", type="password").strip()
+
+    if new_pin == "":
+        st.warning("Please set a PIN to create your account.")
+        st.stop()
+
+    save_user(username, new_pin)
+    st.success("🎉 Account created! Please log in again.")
+    st.stop()
+
+# ================== INCOME ==================
+st.sidebar.subheader("💰 Monthly Income")
+
+if "income" not in st.session_state:
+    st.session_state.income = load_income(username)
+
+new_income = st.sidebar.number_input("Monthly Income (₹)", min_value=0.0, value=st.session_state.income)
+
+if st.sidebar.button("Save Income"):
+    st.session_state.income = new_income
+    save_income(username, new_income)
+    st.success("✅ Income saved!")
+    st.rerun()
+
+# ================== WORKING DATA ==================
+data = st.session_state.data
+
+if not data.empty:
+    data["Date"] = pd.to_datetime(data["Date"], errors="coerce")
+    data = data.dropna(subset=["Date"])
+    st.session_state.data = data
+
+# ================== ADD EXPENSE ==================
+st.header("➕ Add Expense")
+
+col_a, col_b, col_c = st.columns(3)
+with col_a:
+    date = st.date_input("Date")
+with col_b:
+    category = st.selectbox("Category", ["Food", "Travel", "Shopping", "Entertainment", "Others"])
+with col_c:
+    amount = st.number_input("Amount (₹)", min_value=0.0)
+
+if st.button("Add Expense"):
+    new_row = pd.DataFrame({"Date": [str(date)], "Category": [category], "Amount": [amount]})
+    st.session_state.data = pd.concat([st.session_state.data, new_row], ignore_index=True)
+    save_expenses(username, st.session_state.data)
+    st.success("✅ Expense added!")
+    st.rerun()
+
+if st.button("↩️ Undo Last Expense"):
+    if len(st.session_state.data) > 0:
+        st.session_state.data = st.session_state.data[:-1]
+        save_expenses(username, st.session_state.data)
+        st.success("Last expense removed.")
+        st.rerun()
+
+# ================== BALANCE ==================
+data = st.session_state.data
+total_expense = data["Amount"].sum() if not data.empty else 0.0
+balance = st.session_state.income - total_expense
+
+st.header("💼 Balance Summary")
+col1, col2, col3 = st.columns(3)
+col1.metric("Monthly Income", f"₹{st.session_state.income:.2f}")
+col2.metric("Total Expenses", f"₹{total_expense:.2f}")
+col3.metric("Remaining Balance", f"₹{balance:.2f}")
+
+# ================== SMART BUDGET ==================
+today = datetime.today()
+days_in_month = calendar.monthrange(today.year, today.month)[1]
+days_left = days_in_month - today.day
+
+st.subheader("🧠 Smart Budget Advice")
+
+ideal_daily = st.session_state.income / days_in_month if days_in_month > 0 else 0
+adjusted_daily = balance / days_left if days_left > 0 else balance
+
+st.info(f"💡 Ideal daily spending: ₹{ideal_daily:.2f}/day")
+
+if balance < 0:
+    st.error("⚠️ You have exceeded your monthly budget!")
+else:
+    st.warning(f"⚠️ Adjusted safe spending for remaining days: ₹{adjusted_daily:.2f}/day")
+
+if not data.empty:
+    avg_spend = data["Amount"].mean()
+    if avg_spend > ideal_daily:
+        st.warning("📊 Your average spend is above the ideal daily budget.")
+    if avg_spend > adjusted_daily:
+        st.error("🚨 You are overspending beyond the safe limit!")
+
+# ================== OVERVIEW ==================
+st.header("📊 Overview")
+
+if not data.empty:
+    total = data["Amount"].sum()
+    avg = data["Amount"].mean()
+    median = data["Amount"].median()
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Total Spent", f"₹{total:.2f}")
+    c2.metric("Avg per Entry", f"₹{avg:.2f}")
+    c3.metric("Median", f"₹{median:.2f}")
+
+    st.subheader("🗂️ Spending by Category")
+    st.bar_chart(data.groupby("Category")["Amount"].sum())
+
+    st.subheader("📅 Daily Spending Trend")
+    st.line_chart(data.groupby("Date")["Amount"].sum())
+
+    # ================== PREDICTION ==================
+    if len(data) > 3:
+        st.subheader("🔮 7-Day Spending Forecast")
+        data_sorted = data.sort_values("Date")
+        y = data_sorted["Amount"].values
+        x = np.arange(len(y))
+        slope, intercept = np.polyfit(x, y, 1)
+        future_x = np.arange(len(y), len(y) + 7)
+        predictions = slope * future_x + intercept
+        st.line_chart(predictions)
+    else:
+        st.info("Add more than 3 expenses to see spending predictions.")
+else:
+    st.info("No expenses recorded yet. Start adding your expenses above!")
 
 # ✅ LOAD DATA
 def load_data(username):
