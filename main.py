@@ -2,20 +2,17 @@ import firebase_admin
 from firebase_admin import credentials, db
 import streamlit as st
 import pandas as pd
-import os
-from datetime import datetime
-import calendar
-import numpy as np
 import json
 
+# 🔥 Initialize Firebase ONLY ONCE
 if not firebase_admin._apps:
     firebase_key = st.secrets["FIREBASE_KEY"]
 
-    # 👇 handle BOTH cases automatically
+    # Handle BOTH cases (string OR dict)
     if isinstance(firebase_key, str):
         firebase_dict = json.loads(firebase_key)
     else:
-        firebase_dict = firebase_key
+        firebase_dict = dict(firebase_key)  # ensure it's a normal dict
 
     cred = credentials.Certificate(firebase_dict)
 
@@ -23,9 +20,14 @@ if not firebase_admin._apps:
         "databaseURL": "https://expense-analyzer-db523-default-rtdb.asia-southeast1.firebasedatabase.app/"
     })
 
+
+# ✅ SAVE DATA
 def save_data(username, data):
     ref = db.reference(f"users/{username}/expenses")
     ref.set(data.to_dict(orient="records"))
+
+
+# ✅ LOAD DATA
 def load_data(username):
     ref = db.reference(f"users/{username}/expenses")
     data = ref.get()
