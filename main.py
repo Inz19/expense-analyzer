@@ -1,172 +1,229 @@
-import pandas as pd
+import firebase_admin
+from firebase_admin import credentials, db
 import streamlit as st
-import matplotlib.pyplot as plt
-st.set_page_config(page_title="Expense Analyzer", page_icon="📊", layout="wide")
+import pandas as pd
+import os
+from datetime import datetime
+import calendar
+import numpy as np
+if not firebase_admin._apps:
+    cred = credentials.Certificate("firebase_key.json")
+    firebase_admin.initialize_app(cred, {
+        "databaseURL": "https://expense-analyzer-db523-default-rtdb.asia-southeast1.firebasedatabase.app/"
+    })
+def save_data(username, data):
+    ref = db.reference(f"users/{username}/expenses")
+    ref.set(data.to_dict(orient="records"))
+def load_data(username):
+    ref = db.reference(f"users/{username}/expenses")
+    data = ref.get()
 
-# Title
-st.title("📊 Smart Expense Analyzer & Predictor")
-# =========================
-# USER INPUT (NAME)
-# =========================
+    if data:
+        return pd.DataFrame(data)
+    else:
+        return pd.DataFrame(columns=["Date", "Category", "Amount"])
+# ================== CONFIG ==================
+st.set_page_config(page_title="Expense Analyzer", layout="wide")
+st.title("💰 Smart Expense Analyzer")
+
+USERS_FILE = "users.csv"
+
+# ================== INIT USERS ==================
+if not os.path.exists(USERS_FILE):
+    pd.DataFrame(columns=["username", "pin"]).to_csv(USERS_FILE, index=False)
+
+# ================== USER LOGIN ==================
 st.sidebar.header("👤 User")
-
-username = st.sidebar.text_input("Enter your name")
+username = st.sidebar.text_input("Enter username").strip()
 
 if username == "":
-    st.warning("Please enter your name to continue")
+    st.warning("Enter username")
     st.stop()
+
+users_df = pd.read_csv(USERS_FILE, dtype={"pin": str})
+user_row = users_df[users_df["username"] == username]
+
+if not user_row.empty:
+    pin = st.sidebar.text_input("Enter PIN", type="password").strip()
+
+    if pin == "":
+        st.info("Enter PIN")
+        st.stop()
+
+    stored_pin = str(user_row["pin"].values[0]).replace(".0", "")
+
+    if pin != stored_pin:
+        st.error("Wrong PIN")
+        st.stop()
+    if "data" not in st.session_state or st.session_state.get("user") != username:
+        st.session_state.data = load_data(username)
+        st.session_state.user = username
+
+    st.success(f"Welcome {username}")
+
+else:
+    st.sidebar.subheader("New User")
+    new_pin = st.sidebar.text_input("Set PIN", type="password").strip()
+
+    if new_pin == "":
+        st.warning("Set PIN")
+        st.stop()
+
+    new_user = pd.DataFrame([[username, new_pin]], columns=["username", "pin"])
+    users_df = pd.concat([users_df, new_user], ignore_index=True)
+    users_df.to_csv(USERS_FILE, index=False)
+
+    st.success("Account created! Login again.")
+    st.stop()
+
+# ================== INCOME ==================
+st.sidebar.subheader("💰 Income")
+
+income_file = f"{username}_income.txt"
+
+if os.path.exists(income_file):
+    try:
+        with open(income_file, "r") as f:
+            income = float(f.read())
+    except:
+        income = 0.0
+else:
+    income = 0.0
+
+if "income" not in st.session_state:
+    st.session_state.income = income
+
+new_income = st.sidebar.number_input("Monthly Income", min_value=0.0, value=st.session_state.income)
+
+if st.sidebar.button("Save Income"):
+    st.session_state.income = new_income
+    with open(income_file, "w") as f:
+        f.write(str(new_income))
+    st.success("Income saved")
+    st.rerun()
+
+# ================== LOAD DATA ==================
 file_name = f"{username}_expenses.csv"
 
-st.write(f"Welcome, **{username}** 👋")
-st.sidebar.header("🔄 Data Control")
+if os.path.exists(file_name):
+    data = load_data(username)
+else:
+    data = pd.DataFrame(columns=["Date", "Category", "Amount"])
 
-if st.sidebar.button("Reload Data from CSV"):
-    st.session_state.data = pd.read_csv(file_name)
-    st.success("Data reloaded successfully!")
+if not data.empty:
+    data["Date"] = pd.to_datetime(data["Date"], errors="coerce")
+data = data.dropna(subset=["Date"])
 
-# =========================
-# LOAD USER-SPECIFIC DATA
-# =========================
-
-
-try:
-    data = pd.read_csv(file_name)
-except:
-    data = pd.read_csv("expenses.csv")
-
-# Clean data
-data = data[['Date', 'Category', 'Amount']]
-data['Date'] = pd.to_datetime(data['Date'], dayfirst=True)
-# Initialize session data
-if 'data' not in st.session_state:
+if "data" not in st.session_state:
     st.session_state.data = data.copy()
-    data = st.session_state.data = data.copy()
 
-st.header("➕ Add New Expense")
-
-with st.form("expense_form"):
-    date = st.date_input("Select Date")
-    category = st.selectbox("Category", ["Food", "Travel", "Shopping", "Entertainment", "Others"])
-    amount = st.number_input("Amount", min_value=0.0)
-
-    submitted = st.form_submit_button("Add Expense")
-
-if submitted:
-    new_data = pd.DataFrame({
-        'Data': [pd.to_datetime(date)],
-        'Category': [category],
-        'Amount': [amount]
-    })
-
-    st.session_state.data = pd.concat(
-        [st.session_state.data, new_data],
-    )
-    st.session_state.data.to_csv(file_name, index=False)
-
-    st.success("Expense added & saved!")
-
-# 👉 IMPORTANT: use this everywhere below
-data = st.session_state.data 
-# =========================
-# UNDO LAST ENTRY
-# =========================
-st.subheader("↩️ Undo Last Entry")
-
-if st.button("Undo Last Expense"):
-    if len(st.session_state.data) > 0:
-        st.session_state.data = st.session_state.data[:-1]
-        st.success("Last expense removed")
-    else:
-        st.warning("No data to remove")
-
-# Update data again
 data = st.session_state.data
 
-# =========================
-# 🔹 SECTION 1: OVERVIEW
-# =========================
-st.header("Overview")
+# ================== ADD EXPENSE ==================
+st.header("➕ Add Expense")
 
-total = data['Amount'].sum()
-avg = data['Amount'].mean()
-median = data['Amount'].median()
+date = st.date_input("Date")
+category = st.selectbox("Category", ["Food", "Travel", "Shopping", "Entertainment", "Others"])
+amount = st.number_input("Amount", min_value=0.0)
 
-st.write(f"Total Expense: ₹{total}")
-st.write(f"Average Expense: ₹{avg:.2f}")
-st.write(f"Median Expense: ₹{median}")
+if st.button("Add Expense"):
+    new_data = pd.DataFrame({
+        "Date": [str(date)],
+        "Category": [category],
+        "Amount": [amount]
+    })
 
-# =========================
-# 🔹 SECTION 2: CATEGORY ANALYSIS
-# =========================
-st.header("Category Analysis")
+    st.session_state.data = pd.concat([data, new_data], ignore_index=True)
+    save_data(username, st.session_state.data)
+    st.session_state.data.to_csv(file_name, index=False)
 
-category_sum = data.groupby('Category')['Amount'].sum()
+    st.success("Added!")
+    st.rerun()
 
-st.write(category_sum)
+# ================== UNDO ==================
+if st.button("Undo Last"):
+    if len(data) > 0:
+        st.session_state.data = data[:-1]
+        st.session_state.data.to_csv(file_name, index=False)
+        st.rerun()
 
-fig1, ax1 = plt.subplots()
-category_sum.plot(kind='bar', ax=ax1)
-ax1.set_title("Spending by Category")
-st.pyplot(fig1)
+# ================== BALANCE ==================
+total_expense = data["Amount"].sum()
+balance = st.session_state.income - total_expense
 
-highest = category_sum.idxmax()
-st.write(f"Highest Spending Category: {highest}")
+st.header("💼 Balance")
 
-# =========================
-# 🔹 SECTION 3: DAILY TREND
-# =========================
-st.header("Daily Expense Trend")
+col1, col2 = st.columns(2)
+col1.metric("Expense", f"{total_expense:.2f}")
+col2.metric("Balance", f"{balance:.2f}")
 
-daily = data.groupby('Date')['Amount'].sum()
+# ================== SMART BUDGET ==================
+# ================== SMART BUDGET ==================
+today = datetime.today()
+days_in_month = calendar.monthrange(today.year, today.month)[1]
+days_left = days_in_month - today.day
 
-fig2, ax2 = plt.subplots()
-daily.plot(ax=ax2)
-ax2.set_title("Daily Expenses")
-st.pyplot(fig2)
+st.subheader("🧠 Budget Advice")
 
-# =========================
-# 🔹 SECTION 4: SIMPLE PREDICTION
-# =========================
-st.header("Prediction")
+# Ideal budget (full month)
+ideal_daily = st.session_state.income / days_in_month
 
-# Simple prediction (average-based)
-predicted = avg * 7
-
-st.write(f"Predicted Expense for Next 7 Days: ₹{predicted:.2f}")
-
-# =========================
-# 🔹 SECTION 5: ALERT
-# =========================
-st.header("Budget Alert")
-
-budget = st.number_input("Enter your weekly budget:", value=3000)
-
-if predicted > budget:
-    st.error("⚠️ You may overspend!")
+# Adjusted budget (remaining money)
+if days_left > 0:
+    adjusted_daily = balance / days_left
 else:
-    st.success("✅ You are within budget")
-    from sklearn.linear_model import LinearRegression
+    adjusted_daily = balance
+
+st.info(f"💡 Ideal spending: ₹{ideal_daily:.2f}/day")
+
+if balance < 0:
+    st.error("⚠️ You have exceeded your budget!")
+else:
+    st.warning(f"⚠️ Adjusted spending: ₹{adjusted_daily:.2f}/day")
+
+# ================== ALERT ==================
+if not data.empty:
+    avg_spend = data["Amount"].mean()
+
+    if avg_spend > ideal_daily:
+        st.warning("⚠️ You are spending more than ideal daily budget")
+
+    if avg_spend > adjusted_daily:
+        st.error("🚨 You are overspending even beyond safe limit!")
+# ================== OVERVIEW ==================
+st.header("📊 Overview")
+
+if not data.empty:
+    total = data["Amount"].sum()
+    avg = data["Amount"].mean()
+    median = data["Amount"].median()
+
+    c1, c2, c3 = st.columns(3)
+    c1.metric("Total", f"{total:.2f}")
+    c2.metric("Avg", f"{avg:.2f}")
+    c3.metric("Median", f"{median:.2f}")
+
+    st.subheader("Category Spending")
+    st.bar_chart(data.groupby("Category")["Amount"].sum())
+
+    st.subheader("Daily Spending")
+    st.line_chart(data.groupby("Date")["Amount"].sum())
+
+# ================== PREDICTION ==================
 import numpy as np
 
-# Prepare data
-daily = data.groupby('Date')['Amount'].sum().reset_index()
+if len(data) > 3:
+    data_sorted = data.sort_values("Date")
 
-# Convert dates to numbers
-daily['Day'] = np.arange(len(daily))
+    y = data_sorted["Amount"].values
+    x = np.arange(len(y))
 
-X = daily[['Day']]
-y = daily['Amount']
+    # Fit a line (trend)
+    slope, intercept = np.polyfit(x, y, 1)
 
-# Train model
-model = LinearRegression()
-model.fit(X, y)
+    future_x = np.arange(len(y), len(y) + 7)
+    predictions = slope * future_x + intercept
 
-# Predict next 7 days
-future_days = pd.DataFrame({
-    'Day': np.arange(len(daily), len(daily) + 7)
-})
-predictions = model.predict(future_days)
-
-predicted = predictions.sum()
-
-st.write(f"Predicted Expense for Next 7 Days: ₹{predicted:.2f}")
+    st.line_chart(predictions)
+else:
+    st.info("Not enough data to predict yet")
