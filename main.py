@@ -9,7 +9,14 @@ import numpy as np
 import json
 
 if not firebase_admin._apps:
-    firebase_dict = st.secrets["FIREBASE_KEY"]
+    firebase_key = st.secrets["FIREBASE_KEY"]
+
+    # 👇 handle BOTH cases automatically
+    if isinstance(firebase_key, str):
+        firebase_dict = json.loads(firebase_key)
+    else:
+        firebase_dict = firebase_key
+
     cred = credentials.Certificate(firebase_dict)
 
     firebase_admin.initialize_app(cred, {
