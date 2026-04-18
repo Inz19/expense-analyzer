@@ -16,7 +16,6 @@ if not firebase_admin._apps:
         "databaseURL": "https://expense-analyzer-db523-default-rtdb.asia-southeast1.firebasedatabase.app/"
     })
 
-)
 def save_data(username, data):
     ref = db.reference(f"users/{username}/expenses")
     ref.set(data.to_dict(orient="records"))
