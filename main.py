@@ -9,7 +9,7 @@ import firebase_admin
 from firebase_admin import credentials, db
 
 # ================== FIREBASE INIT ==================
-f not firebase_admin._apps:
+if not firebase_admin._apps:
     firebase_key = st.secrets["FIREBASE_KEY"]
     firebase_dict = dict(firebase_key)
 
