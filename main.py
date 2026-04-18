@@ -11,16 +11,7 @@ from firebase_admin import credentials, db
 # ================== FIREBASE INIT ==================
 if not firebase_admin._apps:
     firebase_key = st.secrets["FIREBASE_KEY"]
-    firebase_dict = dict(firebase_key)
-
-    pk = firebase_dict.get("private_key", "")
-    pk = pk.replace("\\n", "\n")  # fix escaped newlines
-    # Fix spaces that Streamlit puts instead of newlines
-    pk = pk.replace("-----BEGIN PRIVATE KEY----- ", "-----BEGIN PRIVATE KEY-----\n")
-    pk = pk.replace(" -----END PRIVATE KEY-----", "\n-----END PRIVATE KEY-----")
-    pk = pk.replace(" ", "\n")  # fix spaces in the middle of the key
-    firebase_dict["private_key"] = pk
-
+    firebase_dict = json.loads(firebase_key)
     cred = credentials.Certificate(firebase_dict)
     firebase_admin.initialize_app(cred, {
         "databaseURL": "https://expense-analyzer-db523-default-rtdb.asia-southeast1.firebasedatabase.app/"
