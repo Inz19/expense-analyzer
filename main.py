@@ -9,14 +9,21 @@ import firebase_admin
 from firebase_admin import credentials, db
 
 # ================== FIREBASE INIT ==================
-if not firebase_admin._apps:
+f not firebase_admin._apps:
     firebase_key = st.secrets["FIREBASE_KEY"]
-    firebase_dict = json.loads(firebase_key) if isinstance(firebase_key, str) else dict(firebase_key)
+    firebase_dict = dict(firebase_key)
+
+    # Force fix private key — handles both \\n and literal newlines
+    pk = firebase_dict.get("private_key", "")
+    pk = pk.replace("\\n", "\n")
+    if not pk.strip().startswith("-----BEGIN"):
+        raise ValueError("private_key looks wrong — check your Streamlit secrets")
+    firebase_dict["private_key"] = pk
+
     cred = credentials.Certificate(firebase_dict)
     firebase_admin.initialize_app(cred, {
         "databaseURL": "https://expense-analyzer-db523-default-rtdb.asia-southeast1.firebasedatabase.app/"
     })
-
 # ================== FIREBASE HELPERS ==================
 def save_expenses(username, data):
     ref = db.reference(f"users/{username}/expenses")
