@@ -25,7 +25,11 @@ def save_expenses(username, data):
 def load_expenses(username):
     ref = db.reference(f"users/{username}/expenses")
     data = ref.get()
-    return pd.DataFrame(data) if data else pd.DataFrame(columns=["Date", "Category", "Amount"])
+    if data:
+        df = pd.DataFrame(data)
+        df["Amount"] = pd.to_numeric(df["Amount"], errors="coerce").fillna(0.0)
+        return df
+    return pd.DataFrame(columns=["Date", "Category", "Amount"])
 
 def save_user(username, pin):
     ref = db.reference(f"users/{username}/profile")
@@ -74,7 +78,7 @@ if user_profile:
         st.session_state.user = username
         st.session_state.income = load_income(username)
 
-    st.success(f"✅ Welcome back, {username}!")
+    st.sidebar.success(f"✅ Welcome, {username}!")
 
 else:
     st.sidebar.subheader("🆕 New User — Set PIN")
@@ -88,7 +92,7 @@ else:
     st.success("🎉 Account created! Please log in again.")
     st.stop()
 
-# ================== INCOME ==================
+# ================== INCOME SIDEBAR ==================
 st.sidebar.subheader("💰 Monthly Income")
 
 if "income" not in st.session_state:
@@ -101,7 +105,7 @@ new_income = st.sidebar.number_input(
 if st.sidebar.button("Save Income"):
     st.session_state.income = new_income
     save_income(username, new_income)
-    st.success("✅ Income saved!")
+    st.sidebar.success("✅ Income saved!")
     st.rerun()
 
 # ================== WORKING DATA ==================
@@ -110,424 +114,354 @@ data = st.session_state.data
 if not data.empty:
     data["Date"] = pd.to_datetime(data["Date"], errors="coerce")
     data = data.dropna(subset=["Date"])
+    data["Amount"] = pd.to_numeric(data["Amount"], errors="coerce").fillna(0.0)
     st.session_state.data = data
 
-# ================== ADD EXPENSE ==================
-st.header("➕ Add Expense")
-
-col_a, col_b, col_c = st.columns(3)
-with col_a:
-    date = st.date_input("Date")
-with col_b:
-    category = st.selectbox(
-        "Category", ["Food", "Travel", "Shopping", "Entertainment", "Others"]
-    )
-with col_c:
-    amount = st.number_input("Amount (₹)", min_value=0.0)
-
-if st.button("Add Expense"):
-    new_row = pd.DataFrame(
-        {"Date": [str(date)], "Category": [category], "Amount": [amount]}
-    )
-    st.session_state.data = pd.concat(
-        [st.session_state.data, new_row], ignore_index=True
-    )
-    save_expenses(username, st.session_state.data)
-    st.success("✅ Expense added!")
-    st.rerun()
-
-if st.button("↩️ Undo Last Expense"):
-    if len(st.session_state.data) > 0:
-        st.session_state.data = st.session_state.data[:-1]
-        save_expenses(username, st.session_state.data)
-        st.success("Last expense removed.")
-        st.rerun()
-
-# ================== BALANCE ==================
-data = st.session_state.data
-total_expense = data["Amount"].sum() if not data.empty else 0.0
-balance = st.session_state.income - total_expense
-
-st.header("💼 Balance Summary")
-col1, col2, col3 = st.columns(3)
-col1.metric("Monthly Income", f"₹{st.session_state.income:.2f}")
-col2.metric("Total Expenses", f"₹{total_expense:.2f}")
-col3.metric("Remaining Balance", f"₹{balance:.2f}")
-
-# ================== SMART BUDGET ==================
+# ================== COMMON VARS ==================
 today = datetime.today()
 days_in_month = calendar.monthrange(today.year, today.month)[1]
-days_left = days_in_month - today.day
-
-st.subheader("🧠 Smart Budget Advice")
-
+days_left = max(days_in_month - today.day, 1)
+total_expense = data["Amount"].sum() if not data.empty else 0.0
+balance = st.session_state.income - total_expense
 ideal_daily = st.session_state.income / days_in_month if days_in_month > 0 else 0
-adjusted_daily = balance / days_left if days_left > 0 else balance
+adjusted_daily = balance / days_left
 
-st.info(f"💡 Ideal daily spending: ₹{ideal_daily:.2f}/day")
+# ================== TABS ==================
+tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    "🏠 Home", "➕ Add Expense", "📊 Overview", "🔮 Insights", "🎯 Smart Analysis"
+])
 
-if balance < 0:
-    st.error("⚠️ You have exceeded your monthly budget!")
-else:
-    st.warning(f"⚠️ Adjusted safe spending for remaining days: ₹{adjusted_daily:.2f}/day")
+# ══════════════════════════════════════════
+# TAB 1 — HOME
+# ══════════════════════════════════════════
+with tab1:
+    st.header("💼 Your Budget at a Glance")
 
-if not data.empty:
-    avg_spend = data["Amount"].mean()
-    if avg_spend > ideal_daily:
-        st.warning("📊 Your average spend is above the ideal daily budget.")
-    if avg_spend > adjusted_daily:
-        st.error("🚨 You are overspending beyond the safe limit!")
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Monthly Income", f"₹{st.session_state.income:.2f}")
+    col2.metric("Total Spent", f"₹{total_expense:.2f}")
+    col3.metric("Money Left", f"₹{balance:.2f}")
 
-# ================== OVERVIEW ==================
-st.header("📊 Overview")
+    st.subheader("🧠 Budget Advice")
+    st.info(f"💡 You should ideally spend ₹{ideal_daily:.2f} per day to stay on track.")
 
-if not data.empty:
-    total = data["Amount"].sum()
-    avg = data["Amount"].mean()
-    median = data["Amount"].median()
-    std_dev = data["Amount"].std()
-    variance = data["Amount"].var()
+    if balance < 0:
+        st.error("⚠️ You've gone over your monthly budget!")
+    else:
+        st.warning(f"⚠️ To finish the month safely, keep your daily spending under ₹{adjusted_daily:.2f}.")
 
-    c1, c2, c3, c4, c5 = st.columns(5)
-    c1.metric("Total Spent", f"₹{total:.2f}")
-    c2.metric("Mean (μ)", f"₹{avg:.2f}")
-    c3.metric("Median", f"₹{median:.2f}")
-    c4.metric("Std Dev (σ)", f"₹{std_dev:.2f}")
-    c5.metric("Variance (σ²)", f"₹{variance:.2f}")
+    if not data.empty:
+        avg_spend = data["Amount"].mean()
+        if avg_spend > adjusted_daily:
+            st.error("🚨 Your recent spending is too high — you may run out of money before month end!")
+        elif avg_spend > ideal_daily:
+            st.warning("📊 You're spending a bit more than planned each day. Try to cut back a little.")
+        else:
+            st.success("✅ Great job! Your spending is well within budget.")
 
-    st.subheader("🗂️ Spending by Category")
-    st.bar_chart(data.groupby("Category")["Amount"].sum())
+# ══════════════════════════════════════════
+# TAB 2 — ADD EXPENSE
+# ══════════════════════════════════════════
+with tab2:
+    st.header("➕ Add a New Expense")
 
-    st.subheader("📅 Daily Spending Trend")
-    st.line_chart(data.groupby("Date")["Amount"].sum())
+    col_a, col_b, col_c = st.columns(3)
+    with col_a:
+        date = st.date_input("Date")
+    with col_b:
+        category = st.selectbox(
+            "Category", ["Food", "Travel", "Shopping", "Entertainment", "Others"]
+        )
+    with col_c:
+        amount = st.number_input("Amount (₹)", min_value=0.0, step=1.0)
 
-    # ================== PREDICTION ==================
-    if len(data) > 3:
-        st.subheader("🔮 7-Day Spending Forecast (Linear Regression)")
-        st.caption("Uses least squares method: y = mx + c to predict future spending")
+    if st.button("Add Expense"):
+        if amount <= 0:
+            st.error("Please enter an amount greater than ₹0.")
+        else:
+            # FIX: ensure Amount column dtype is float before concat
+            new_row = pd.DataFrame({
+                "Date": [str(date)],
+                "Category": [category],
+                "Amount": [float(amount)]
+            })
+            current = st.session_state.data.copy()
+            current["Amount"] = pd.to_numeric(current["Amount"], errors="coerce").fillna(0.0)
+            st.session_state.data = pd.concat([current, new_row], ignore_index=True)
+            save_expenses(username, st.session_state.data)
+            st.success(f"✅ Added ₹{amount:.2f} for {category} on {date}!")
+            st.rerun()
+
+    if st.button("↩️ Undo Last Expense"):
+        if len(st.session_state.data) > 0:
+            st.session_state.data = st.session_state.data.iloc[:-1].reset_index(drop=True)
+            save_expenses(username, st.session_state.data)
+            st.success("Last expense removed.")
+            st.rerun()
+        else:
+            st.info("No expenses to undo.")
+
+    st.subheader("📋 All Expenses")
+    if not data.empty:
+        display_data = data.copy()
+        display_data["Date"] = display_data["Date"].dt.strftime("%d %b %Y")
+        display_data["Amount"] = display_data["Amount"].apply(lambda x: f"₹{x:.2f}")
+        st.dataframe(display_data, use_container_width=True, hide_index=True)
+    else:
+        st.info("No expenses added yet.")
+
+# ══════════════════════════════════════════
+# TAB 3 — OVERVIEW
+# ══════════════════════════════════════════
+with tab3:
+    st.header("📊 Spending Overview")
+
+    if not data.empty:
+        total = data["Amount"].sum()
+        avg = data["Amount"].mean()
+        median = data["Amount"].median()
+        std_dev = data["Amount"].std()
+
+        c1, c2, c3, c4 = st.columns(4)
+        c1.metric("Total Spent", f"₹{total:.2f}")
+        c2.metric("Average per Expense", f"₹{avg:.2f}",
+                  help="The typical amount you spend each time")
+        c3.metric("Middle Expense Value", f"₹{median:.2f}",
+                  help="Half your expenses are above this, half are below")
+        c4.metric("How Much It Varies", f"₹{std_dev:.2f}",
+                  help="How different your spending is day to day — lower means more consistent")
+
+        st.subheader("🗂️ Where Your Money Goes")
+        cat_totals = data.groupby("Category")["Amount"].sum()
+        st.bar_chart(cat_totals)
+
+        st.subheader("📅 Daily Spending Over Time")
+        st.line_chart(data.groupby("Date")["Amount"].sum())
+
+    else:
+        st.info("No expenses recorded yet. Add some in the ➕ Add Expense tab!")
+
+# ══════════════════════════════════════════
+# TAB 4 — INSIGHTS (PREDICTION)
+# ══════════════════════════════════════════
+with tab4:
+    st.header("🔮 Future Spending Forecast")
+
+    if not data.empty and len(data) > 3:
+        st.write("Based on your past spending, here's what the next 7 days might look like:")
+
         data_sorted = data.sort_values("Date")
-        y = data_sorted["Amount"].values
+        y = data_sorted["Amount"].values.astype(float)
         x = np.arange(len(y))
         slope, intercept = np.polyfit(x, y, 1)
         future_x = np.arange(len(y), len(y) + 7)
         predictions = slope * future_x + intercept
+
         pred_df = pd.DataFrame(
-            {"Day": [f"Day +{i+1}" for i in range(7)], "Predicted (₹)": predictions}
+            {"Day": [f"Day +{i+1}" for i in range(7)], "Predicted Spend (₹)": predictions}
         ).set_index("Day")
         st.line_chart(pred_df)
-        st.caption(f"Trend: slope = ₹{slope:.2f}/entry, intercept = ₹{intercept:.2f}")
+
+        trend_msg = "going up 📈" if slope > 0 else "going down 📉"
+        st.info(f"Your spending trend is {trend_msg} by about ₹{abs(slope):.2f} per entry.")
+
+        total_predicted = predictions.sum()
+        if total_predicted > balance:
+            st.error(f"🚨 Your predicted spending for the next 7 days (₹{total_predicted:.2f}) could exceed your remaining balance (₹{balance:.2f})!")
+        else:
+            st.success(f"✅ Your predicted 7-day spend is ₹{total_predicted:.2f}, which fits within your remaining balance.")
+
+    elif not data.empty:
+        st.info("Add more than 3 expenses to see your spending forecast.")
     else:
-        st.info("Add more than 3 expenses to see spending predictions.")
+        st.info("No expenses yet. Start adding expenses to see predictions!")
 
-else:
-    st.info("No expenses recorded yet. Start adding your expenses above!")
+# ══════════════════════════════════════════
+# TAB 5 — SMART ANALYSIS
+# ══════════════════════════════════════════
+with tab5:
+    st.header("🎯 Smart Spending Analysis")
 
-
-# ================================================================
-# 📐 PROBABILITY & STATISTICS ANALYSIS  (Module 1 & Module 2)
-# ================================================================
-
-st.divider()
-st.header("📐 Probability & Statistical Analysis")
-st.caption(
-    "Applying Module 2 concepts: Normal Distribution, Poisson Distribution, "
-    "Binomial Distribution, Conditional Probability & Descriptive Statistics"
-)
-
-if data.empty or len(data) < 5:
-    st.info(
-        "⚠️ Add at least 5 expense entries to unlock the probability analysis features."
-    )
-else:
-    # --- Aggregate to daily totals ---
-    daily = data.groupby("Date")["Amount"].sum().reset_index()
-    daily.columns = ["Date", "DailyTotal"]
-    amounts = daily["DailyTotal"].values
-
-    mu = float(np.mean(amounts))
-    sigma = float(np.std(amounts))
-    n_days = len(amounts)
-
-    # ── DESCRIPTIVE STATS RECAP ──────────────────────────────────
-    st.subheader("📊 Descriptive Statistics of Daily Spending")
-    st.caption("Module 1: Mean, Variance, Standard Deviation, Skewness")
-
-    skewness = float(pd.Series(amounts).skew())
-    desc_col1, desc_col2, desc_col3, desc_col4 = st.columns(4)
-    desc_col1.metric("Mean (μ)", f"₹{mu:.2f}")
-    desc_col2.metric("Std Dev (σ)", f"₹{sigma:.2f}")
-    desc_col3.metric("Variance (σ²)", f"₹{sigma**2:.2f}")
-    desc_col4.metric("Skewness", f"{skewness:.3f}")
-
-    if skewness > 0.5:
-        st.info("📈 Positively skewed — occasional large expense spikes detected.")
-    elif skewness < -0.5:
-        st.info("📉 Negatively skewed — most days you spend heavily.")
+    if data.empty or len(data) < 5:
+        st.info("⚠️ Add at least 5 expenses to unlock smart analysis.")
     else:
-        st.success("✅ Roughly symmetric spending — consistent daily habits.")
+        daily = data.groupby("Date")["Amount"].sum().reset_index()
+        daily.columns = ["Date", "DailyTotal"]
+        amounts = daily["DailyTotal"].values.astype(float)
 
-    st.divider()
+        mu = float(np.mean(amounts))
+        sigma = float(np.std(amounts))
+        n_days = len(amounts)
+        skewness = float(pd.Series(amounts).skew())
 
-    # ════════════════════════════════════════════════════════════
-    # FEATURE 1 — NORMAL DISTRIBUTION
-    # ════════════════════════════════════════════════════════════
-    st.subheader("🔔 Feature 1: Normal Distribution — Overspending Probability")
-    st.caption(
-        "Module 2: Normal/Gaussian Distribution | Formula: Z = (X - μ) / σ | "
-        "P(X > threshold) = 1 - Φ(Z)"
-    )
+        # ── SPENDING PERSONALITY ─────────────────────────────────
+        st.subheader("🧬 Your Spending Personality")
 
-    with st.expander("📖 What is Normal Distribution?", expanded=False):
-        st.markdown(
-            """
-            A continuous random variable X follows **Normal Distribution** N(μ, σ²) if:
+        p1, p2, p3 = st.columns(3)
+        p1.metric("Your Usual Daily Spend", f"₹{mu:.2f}",
+                  help="The average amount you spend on a typical day")
+        p2.metric("Day-to-Day Variation", f"₹{sigma:.2f}",
+                  help="How much your daily spending jumps around — lower is more stable")
+        p3.metric("Spending Pattern", 
+                  "Spiky 🌋" if skewness > 0.5 else ("Heavy starter 🏋️" if skewness < -0.5 else "Steady 🟢"),
+                  help="Spiky = occasional big days. Heavy starter = you spend more early. Steady = consistent.")
 
-            **PDF:** f(x) = (1 / σ√2π) × e^[-(x-μ)²/2σ²]
+        if skewness > 0.5:
+            st.info("📈 You have a few days where you spend a lot more than usual — things like shopping trips or outings.")
+        elif skewness < -0.5:
+            st.info("📉 You tend to spend heavily early in the month and slow down later.")
+        else:
+            st.success("✅ Your spending is pretty consistent — you're a steady spender!")
 
-            - **μ (mean):** Centre of the bell curve
-            - **σ (std dev):** How spread out the data is
-            - **Z-score:** Z = (X - μ) / σ  standardises X to N(0,1)
+        st.divider()
 
-            We use the **Standard Normal Table** to find P(X > threshold).
-            """
-        )
+        # ── OVERSPENDING RISK ────────────────────────────────────
+        st.subheader("🔔 Overspending Risk Check")
+        st.write("Set a daily limit and see how often you're likely to go over it.")
 
-    if sigma == 0:
-        st.warning("All daily expenses are identical — cannot compute normal distribution.")
-    else:
-        nd_col1, nd_col2 = st.columns(2)
+        if sigma == 0:
+            st.warning("All your daily expenses are the same — can't calculate risk.")
+        else:
+            oc1, oc2 = st.columns(2)
 
-        with nd_col1:
-            threshold = st.number_input(
-                "Set daily spending threshold (₹)",
-                min_value=0.0,
-                value=float(round(mu * 1.2, 2)),
-                key="nd_threshold",
+            with oc1:
+                threshold = st.number_input(
+                    "Your daily spending limit (₹)",
+                    min_value=0.0,
+                    value=float(round(mu * 1.2, 2)),
+                    key="nd_threshold",
+                )
+
+            with oc2:
+                z_score = (threshold - mu) / sigma
+                prob_exceed = float(1 - norm.cdf(z_score))
+                st.metric("Chance of going over your limit", f"{prob_exceed*100:.1f}%")
+                st.metric("Chance of staying within limit", f"{(1-prob_exceed)*100:.1f}%")
+
+            st.markdown(
+                f"""
+                Based on your past spending (usual daily: ₹{mu:.2f}, variation: ₹{sigma:.2f}):
+                - 68% of your days, you spend between **₹{mu-sigma:.2f}** and **₹{mu+sigma:.2f}**
+                - 95% of your days, you spend between **₹{mu-2*sigma:.2f}** and **₹{mu+2*sigma:.2f}**
+                """
             )
 
-        with nd_col2:
-            z_score = (threshold - mu) / sigma
-            prob_exceed = float(1 - norm.cdf(z_score))
+            if prob_exceed > 0.5:
+                st.error(f"🚨 You cross ₹{threshold:.0f} more than half the time — consider raising your budget or cutting back.")
+            elif prob_exceed > 0.25:
+                st.warning(f"⚠️ You have a 1 in 4 chance of exceeding ₹{threshold:.0f} on any given day.")
+            else:
+                st.success(f"✅ You rarely go over ₹{threshold:.0f}. You're in good control!")
 
-            st.metric("Z-score", f"{z_score:.4f}")
-            st.metric("P(Spending > threshold)", f"{prob_exceed*100:.2f}%")
+        st.divider()
 
-        st.markdown(
-            f"""
-            **Step-by-step working (Module 2):**
-            - μ = ₹{mu:.2f} | σ = ₹{sigma:.2f} | Threshold = ₹{threshold:.2f}
-            - Z = (X - μ) / σ = ({threshold:.2f} - {mu:.2f}) / {sigma:.2f} = **{z_score:.4f}**
-            - P(X > {threshold:.2f}) = 1 - Φ({z_score:.4f}) = **{prob_exceed*100:.2f}%**
+        # ── BIG SPENDING DAYS ────────────────────────────────────
+        st.subheader("☄️ How Often Do You Have a Big Spending Day?")
+        st.write("A 'big spending day' is when you spend more than your usual amount by a significant margin.")
 
-            **Normal Curve Area Properties:**
-            - μ ± 1σ covers 68.26% → ₹{mu-sigma:.2f} to ₹{mu+sigma:.2f}
-            - μ ± 2σ covers 95.44% → ₹{mu-2*sigma:.2f} to ₹{mu+2*sigma:.2f}
-            - μ ± 3σ covers 99.74% → ₹{mu-3*sigma:.2f} to ₹{mu+3*sigma:.2f}
-            """
-        )
+        bd1, bd2 = st.columns(2)
 
-        if prob_exceed > 0.5:
-            st.error(f"🚨 High risk! {prob_exceed*100:.1f}% chance tomorrow exceeds ₹{threshold:.0f}.")
-        elif prob_exceed > 0.25:
-            st.warning(f"⚠️ Moderate risk. {prob_exceed*100:.1f}% chance of exceeding ₹{threshold:.0f}.")
+        with bd1:
+            large_threshold = st.number_input(
+                "What counts as a 'big spending day'? (₹)",
+                min_value=0.0,
+                value=float(round(mu + sigma, 2)),
+                key="poisson_threshold",
+            )
+            target_days = st.number_input(
+                "How many big spending days are you expecting this month?",
+                min_value=0, max_value=30, value=3, key="poisson_target"
+            )
+
+        with bd2:
+            large_days = int(np.sum(amounts > large_threshold))
+            m = max((large_days / n_days) * days_in_month, 0.01)
+            px = float(poisson.pmf(target_days, m))
+            p_at_least_one = float(1 - poisson.pmf(0, m))
+
+            st.metric("Expected big-spend days this month", f"{m:.1f} days")
+            st.metric(f"Chance of exactly {target_days} big days", f"{px*100:.2f}%")
+            st.metric("Chance of at least 1 big day", f"{p_at_least_one*100:.1f}%")
+
+        st.markdown("**Probability breakdown for this month:**")
+        poisson_table = pd.DataFrame({
+            "Number of big-spend days": list(range(8)),
+            "Chance of exactly this many": [f"{poisson.pmf(x, m)*100:.2f}%" for x in range(8)],
+            "Chance of this many or fewer": [f"{poisson.cdf(x, m)*100:.2f}%" for x in range(8)],
+        })
+        st.dataframe(poisson_table, use_container_width=True, hide_index=True)
+
+        st.divider()
+
+        # ── BUDGET SUCCESS STREAK ────────────────────────────────
+        st.subheader("🎯 Will You Stay Under Budget?")
+        st.write("Based on your history, what are the chances you stick to your daily budget for most of the month?")
+
+        bs1, bs2 = st.columns(2)
+
+        with bs1:
+            n_trials = st.number_input(
+                "Days in this month", min_value=1, max_value=31,
+                value=int(days_in_month), key="binom_n"
+            )
+            success_days = st.number_input(
+                "How many days do you want to stay under budget?",
+                min_value=0, max_value=int(n_trials),
+                value=int(n_trials * 0.7), key="binom_k"
+            )
+
+        with bs2:
+            if ideal_daily > 0 and n_days > 0:
+                under_budget_days = int(np.sum(amounts <= ideal_daily))
+                p_success = max(0.01, min(0.99, under_budget_days / n_days))
+            else:
+                under_budget_days = 0
+                p_success = 0.5
+
+            q_fail = 1 - p_success
+            mean_binom = n_trials * p_success
+            p_at_least = float(1 - binom.cdf(success_days - 1, n_trials, p_success))
+            p_exact = float(binom.pmf(success_days, n_trials, p_success))
+
+            st.metric("Your daily budget success rate", f"{p_success*100:.1f}%",
+                      help="How often you've stayed under your ideal daily budget in the past")
+            st.metric(f"Chance of staying under budget for {success_days}+ days", f"{p_at_least*100:.1f}%")
+            st.metric("On average, you'll stay under budget for", f"{mean_binom:.0f} days")
+
+        if p_at_least > 0.7:
+            st.success(f"✅ Great! There's a strong {p_at_least*100:.0f}% chance you'll stay on budget for {success_days}+ days.")
+        elif p_at_least > 0.4:
+            st.warning(f"⚠️ It's possible but not certain — {p_at_least*100:.0f}% chance of {success_days}+ good days.")
         else:
-            st.success(f"✅ Low risk. Only {prob_exceed*100:.1f}% chance of exceeding ₹{threshold:.0f}.")
+            st.error(f"🚨 Only {p_at_least*100:.0f}% chance. You might want to cut back to hit {success_days} budget-friendly days.")
 
-    st.divider()
+        st.markdown("**Day-by-day success probability:**")
+        rows = list(range(min(n_trials + 1, 16)))
+        binom_table = pd.DataFrame({
+            "Good budget days": rows,
+            "Chance of exactly this many": [f"{binom.pmf(x, n_trials, p_success)*100:.2f}%" for x in rows],
+            "Chance of this many or fewer": [f"{binom.cdf(x, n_trials, p_success)*100:.2f}%" for x in rows],
+            "Chance of this many or more": [f"{(1-binom.cdf(x-1, n_trials, p_success))*100:.2f}%" for x in rows],
+        })
+        st.dataframe(binom_table, use_container_width=True, hide_index=True)
 
-    # ════════════════════════════════════════════════════════════
-    # FEATURE 2 — POISSON DISTRIBUTION
-    # ════════════════════════════════════════════════════════════
-    st.subheader("☄️ Feature 2: Poisson Distribution — Large Expense Day Prediction")
-    st.caption(
-        "Module 2: Poisson Distribution | Formula: P(X = x) = (e⁻ᵐ × mˣ) / x! | "
-        "Mean = Variance = m"
-    )
+        st.divider()
 
-    with st.expander("📖 What is Poisson Distribution?", expanded=False):
-        st.markdown(
-            """
-            **Poisson Distribution** models how many times a rare event occurs in a fixed interval.
+        # ── CATEGORY PROBABILITY ─────────────────────────────────
+        st.subheader("🎲 What Do You Usually Spend On?")
+        st.write("Based on your past transactions, here's how likely you are to spend in each category next time:")
 
-            **PMF:** P(X = x) = (e⁻ᵐ × mˣ) / x!
+        cat_counts = data.groupby("Category")["Amount"].count()
+        total_txns = cat_counts.sum()
+        cat_probs = (cat_counts / total_txns * 100).round(2)
 
-            **Conditions (Module 2):** n → ∞, p → 0, np = m (finite)
+        prob_df = pd.DataFrame({
+            "Category": cat_probs.index,
+            "Times you spent here": cat_counts.values,
+            "Likelihood of next expense": [f"{p:.1f}%" for p in cat_probs.values],
+        })
 
-            Mean = Variance = m
+        st.dataframe(prob_df, use_container_width=True, hide_index=True)
 
-            **Here:** A "large expense day" is the rare event. We predict how many will happen this month.
-            """
-        )
-
-    pd_col1, pd_col2 = st.columns(2)
-
-    with pd_col1:
-        large_threshold = st.number_input(
-            "Define 'large expense day' threshold (₹)",
-            min_value=0.0,
-            value=float(round(mu + sigma, 2)),
-            key="poisson_threshold",
-        )
-        target_days = st.number_input(
-            "Find P(exactly X large-expense days this month)",
-            min_value=0, max_value=30, value=3, key="poisson_target"
-        )
-
-    with pd_col2:
-        large_days = int(np.sum(amounts > large_threshold))
-        m = max((large_days / n_days) * days_in_month, 0.01)
-
-        px = float(poisson.pmf(target_days, m))
-        p_at_least_one = float(1 - poisson.pmf(0, m))
-
-        st.metric("λ (m) — Expected large-expense days/month", f"{m:.2f}")
-        st.metric(f"P(X = {target_days})", f"{px*100:.4f}%")
-        st.metric("P(At least 1 large-expense day)", f"{p_at_least_one*100:.2f}%")
-
-    st.markdown(
-        f"""
-        **Step-by-step working (Module 2):**
-        - Threshold = ₹{large_threshold:.2f}
-        - Large-expense days in data = {large_days} / {n_days}
-        - Rate per day = {large_days/n_days:.4f}
-        - m = rate × days_in_month = {large_days/n_days:.4f} × {days_in_month} = **{m:.4f}**
-        - P(X = {target_days}) = (e⁻{m:.4f} × {m:.4f}^{target_days}) / {target_days}! = **{px*100:.4f}%**
-        - P(X ≥ 1) = 1 - e⁻{m:.4f} = **{p_at_least_one*100:.2f}%**
-        """
-    )
-
-    st.markdown("**Poisson Probability Table:**")
-    poisson_table = pd.DataFrame({
-        "X (large-expense days)": list(range(8)),
-        "P(X = x)": [f"{poisson.pmf(x, m)*100:.4f}%" for x in range(8)],
-        "P(X ≤ x)  [CDF]": [f"{poisson.cdf(x, m)*100:.4f}%" for x in range(8)],
-    })
-    st.dataframe(poisson_table, use_container_width=True, hide_index=True)
-
-    st.divider()
-
-    # ════════════════════════════════════════════════════════════
-    # FEATURE 3 — BINOMIAL DISTRIBUTION
-    # ════════════════════════════════════════════════════════════
-    st.subheader("🎯 Feature 3: Binomial Distribution — Monthly Budget Success")
-    st.caption(
-        "Module 2: Binomial Distribution | Formula: P(X = x) = ⁿCₓ pˣ qⁿ⁻ˣ | "
-        "Mean = np | Variance = npq"
-    )
-
-    with st.expander("📖 What is Binomial Distribution?", expanded=False):
-        st.markdown(
-            """
-            **Binomial Distribution** gives probability of x successes in n independent trials.
-
-            **PMF:** P(X = x) = ⁿCₓ × pˣ × qⁿ⁻ˣ  where q = 1 - p
-
-            **Conditions (Module 2):** Fixed n, independent trials, constant p, success/failure only.
-
-            **Mean = np | Variance = npq | SD = √npq**
-
-            **Here:** Each day = 1 trial. Success = spending ≤ ideal daily budget.
-            """
-        )
-
-    binom_col1, binom_col2 = st.columns(2)
-
-    with binom_col1:
-        n_trials = st.number_input(
-            "Number of days (n)", min_value=1, max_value=31,
-            value=int(days_in_month), key="binom_n"
-        )
-        success_days = st.number_input(
-            "Minimum success days to find probability for",
-            min_value=0, max_value=int(n_trials),
-            value=int(n_trials * 0.7), key="binom_k"
-        )
-
-    with binom_col2:
-        if ideal_daily > 0 and n_days > 0:
-            under_budget_days = int(np.sum(amounts <= ideal_daily))
-            p_success = max(0.01, min(0.99, under_budget_days / n_days))
-        else:
-            under_budget_days = 0
-            p_success = 0.5
-
-        q_fail = 1 - p_success
-        mean_binom = n_trials * p_success
-        var_binom = n_trials * p_success * q_fail
-        sd_binom = float(np.sqrt(var_binom))
-
-        p_at_least = float(1 - binom.cdf(success_days - 1, n_trials, p_success))
-        p_exact = float(binom.pmf(success_days, n_trials, p_success))
-
-        st.metric("p (daily budget success rate)", f"{p_success*100:.2f}%")
-        st.metric("q = 1 - p", f"{q_fail*100:.2f}%")
-        st.metric(f"P(X ≥ {success_days} budget-success days)", f"{p_at_least*100:.2f}%")
-
-    st.markdown(
-        f"""
-        **Step-by-step working (Module 2):**
-        - n = {n_trials} | p = {p_success:.4f} | q = {q_fail:.4f}
-        - Days under budget = {under_budget_days} / {n_days}
-        - **Mean = np = {n_trials} × {p_success:.4f} = {mean_binom:.2f}**
-        - **Variance = npq = {n_trials} × {p_success:.4f} × {q_fail:.4f} = {var_binom:.4f}**
-        - **SD = √npq = {sd_binom:.4f}**
-        - P(X = {success_days}) = ⁿCₓ pˣ qⁿ⁻ˣ = **{p_exact*100:.4f}%**
-        - P(X ≥ {success_days}) = 1 - P(X ≤ {success_days-1}) = **{p_at_least*100:.2f}%**
-        """
-    )
-
-    if p_at_least > 0.7:
-        st.success(f"✅ {p_at_least*100:.1f}% chance of staying under budget for {success_days}+ days!")
-    elif p_at_least > 0.4:
-        st.warning(f"⚠️ {p_at_least*100:.1f}% chance of {success_days}+ budget-success days.")
-    else:
-        st.error(f"🚨 Only {p_at_least*100:.1f}% chance of {success_days}+ days under budget.")
-
-    st.markdown(f"**Binomial Probability Table (n={n_trials}, p={p_success:.4f}):**")
-    rows = list(range(min(n_trials + 1, 16)))
-    binom_table = pd.DataFrame({
-        "X (success days)": rows,
-        "P(X = x)": [f"{binom.pmf(x, n_trials, p_success)*100:.4f}%" for x in rows],
-        "P(X ≤ x) [CDF]": [f"{binom.cdf(x, n_trials, p_success)*100:.4f}%" for x in rows],
-        "P(X ≥ x)": [f"{(1-binom.cdf(x-1, n_trials, p_success))*100:.4f}%" for x in rows],
-    })
-    st.dataframe(binom_table, use_container_width=True, hide_index=True)
-
-    st.divider()
-
-    # ════════════════════════════════════════════════════════════
-    # BONUS — CATEGORY PROBABILITY (Classical / Relative Frequency)
-    # ════════════════════════════════════════════════════════════
-    st.subheader("🎲 Bonus: Category Spending Probability")
-    st.caption(
-        "Module 2: Classical & Relative Frequency Definition | P(E) = n(E) / n(S)"
-    )
-
-    cat_counts = data.groupby("Category")["Amount"].count()
-    total_txns = cat_counts.sum()
-    cat_probs = (cat_counts / total_txns * 100).round(2)
-
-    prob_df = pd.DataFrame({
-        "Category": cat_probs.index,
-        "Transactions n(E)": cat_counts.values,
-        "Total n(S)": total_txns,
-        "P(E) = n(E)/n(S)": [f"{p:.2f}%" for p in cat_probs.values],
-    })
-
-    st.markdown(
-        f"Based on your {total_txns} transactions, probability the next expense belongs to each category:"
-    )
-    st.dataframe(prob_df, use_container_width=True, hide_index=True)
-
-    most_likely = cat_probs.idxmax()
-    st.info(
-        f"🎯 Most likely next category: **{most_likely}** ({cat_probs[most_likely]:.1f}%)"
-    )
-
-    st.divider()
-    st.caption(
-        "📚 All calculations are based on your Statistics & Probability module — "
-        "Normal Distribution (Z = (X-μ)/σ), Poisson PMF (e⁻ᵐmˣ/x!), "
-        "Binomial PMF (ⁿCₓpˣqⁿ⁻ˣ), Descriptive Stats (μ, σ, σ², skewness), "
-        "and Classical Probability P(E) = n(E)/n(S)."
-    )
+        most_likely = cat_probs.idxmax()
+        st.info(f"🎯 Your most common spending category is **{most_likely}** — you spend here {cat_probs[most_likely]:.1f}% of the time.")
