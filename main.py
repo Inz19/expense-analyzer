@@ -5,9 +5,34 @@ st.set_page_config(page_title="Expense Analyzer", page_icon="📊", layout="wide
 
 # Title
 st.title("📊 Smart Expense Analyzer & Predictor")
+# =========================
+# USER INPUT (NAME)
+# =========================
+st.sidebar.header("👤 User")
 
-# Load dataset
-data = pd.read_csv("expenses.csv")
+username = st.sidebar.text_input("Enter your name")
+
+if username == "":
+    st.warning("Please enter your name to continue")
+    st.stop()
+file_name = f"{username}_expenses.csv"
+
+st.write(f"Welcome, **{username}** 👋")
+st.sidebar.header("🔄 Data Control")
+
+if st.sidebar.button("Reload Data from CSV"):
+    st.session_state.data = pd.read_csv(file_name)
+    st.success("Data reloaded successfully!")
+
+# =========================
+# LOAD USER-SPECIFIC DATA
+# =========================
+
+
+try:
+    data = pd.read_csv(file_name)
+except:
+    data = pd.read_csv("expenses.csv")
 
 # Clean data
 data = data[['Date', 'Category', 'Amount']]
@@ -15,6 +40,7 @@ data['Date'] = pd.to_datetime(data['Date'], dayfirst=True)
 # Initialize session data
 if 'data' not in st.session_state:
     st.session_state.data = data.copy()
+    data = st.session_state.data = data.copy()
 
 st.header("➕ Add New Expense")
 
@@ -25,18 +51,22 @@ with st.form("expense_form"):
 
     submitted = st.form_submit_button("Add Expense")
 
-    if submitted:
-        new_data = pd.DataFrame({
-            'Date': [pd.to_datetime(date)],
-            'Category': [category],
-            'Amount': [amount]
-        })
+if submitted:
+    new_data = pd.DataFrame({
+        'Data': [pd.to_datetime(date)],
+        'Category': [category],
+        'Amount': [amount]
+    })
 
-        st.session_state.data = pd.concat([st.session_state.data, new_data], ignore_index=True)
-        st.success("Expense added successfully!")
+    st.session_state.data = pd.concat(
+        [st.session_state.data, new_data],
+    )
+    st.session_state.data.to_csv(file_name, index=False)
+
+    st.success("Expense added & saved!")
 
 # 👉 IMPORTANT: use this everywhere below
-data = st.session_state.data
+data = st.session_state.data 
 # =========================
 # UNDO LAST ENTRY
 # =========================
@@ -51,7 +81,6 @@ if st.button("Undo Last Expense"):
 
 # Update data again
 data = st.session_state.data
-
 
 # =========================
 # 🔹 SECTION 1: OVERVIEW
