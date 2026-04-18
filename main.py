@@ -6,25 +6,16 @@ import os
 from datetime import datetime
 import calendar
 import numpy as np
-import json
-import streamlit as st
-import firebase_admin
-from firebase_admin import credentials, initialize_app
+import jason
 
 if not firebase_admin._apps:
-    import json
-firebase_dict = json.loads(st.secrets["FIREBASE_KEY"])
+    firebase_dict = json.loads(st.secrets["FIREBASE_KEY"])
     cred = credentials.Certificate(firebase_dict)
 
-    initialize_app(cred, {
+    firebase_admin.initialize_app(cred, {
         "databaseURL": "https://expense-analyzer-db523-default-rtdb.asia-southeast1.firebasedatabase.app/"
     })
 
-firebase_dict = json.loads(st.secrets["FIREBASE_KEY"])
-cred = credentials.Certificate(firebase_dict)
-
-initialize_app(cred, {
-    "databaseURL": "https://expense-analyzer-db523-default-rtdb.asia-southeast1.firebasedatabase.app/"
 })
 def save_data(username, data):
     ref = db.reference(f"users/{username}/expenses")
