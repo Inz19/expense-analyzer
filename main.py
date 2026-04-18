@@ -12,7 +12,7 @@ import firebase_admin
 from firebase_admin import credentials, initialize_app
 
 if not firebase_admin._apps:
-    fimport json
+    import json
 firebase_dict = json.loads(st.secrets["FIREBASE_KEY"])
     cred = credentials.Certificate(firebase_dict)
 
